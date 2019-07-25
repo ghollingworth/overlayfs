@@ -1,0 +1,108 @@
+#!/bin/sh
+
+BOOT=/boot
+CMDLINE=cmdline.txt
+CMDLINE_RO=cmdline.txt.overlay
+CMDLINE_RW=cmdline.txt.orig
+
+print_usage() {
+	cat <<-TEXT
+		Usage: ${0##*/} [-h|-r|-s|-t|-w]
+		   -h, --help     This message
+		   -r, --ro       Set read-only root with overlay fs
+		   -s, --status   Show current state
+		   -t, --toggle   Toggle between -r and -w
+		   -w, --rw       Set read-write root
+	TEXT
+}
+
+# Check whether user requests help
+[ "$1" = "--help" -o "$1" = "-h" ] && { print_usage; exit 0; }
+
+# Change to the working directory
+cd $BOOT
+
+# Check that the files we need are present and readable
+for file in $CMDLINE $CMDLINE_RO $CMDLINE_RW; do
+	[ -r $file ] || { echo "ERROR: missing file $file" >&2 && exit 1; }
+done
+
+# Process arg (if any)
+case "$1" in
+	--ro|-r)	action=RO
+			;;
+	--rw|-w)	action=RW
+			;;
+	--status|-s)	action=status
+			;;
+	--toggle|-t)	action=toggle
+			;;
+	*)		print_usage
+			exit 1
+			;;
+esac
+
+line_active=$(cat $CMDLINE)
+line_ro=$(cat $CMDLINE_RO)
+line_rw=$(cat $CMDLINE_RW)
+
+# Check which CMDLINE is in use, this doubles as a sanity check
+if [ "$line_active" = "$line_ro" ]; then
+	state=RO
+elif [ "$line_active" = "$line_rw" ]; then
+	state=RW
+else
+	echo "ERROR: $CMDLINE matches neither $CMDLINE_RO, nor $CMDLINE_RW" >&2
+	exit 1
+fi
+
+check_permission() {
+	# Check that we are running as root
+	[ $(id -u) -eq 0 ] || { echo "ERROR: requires root privileges" >&2; exit 1; }
+
+	# Check that we can write to CMDLINE, otherwise try to remount BOOT
+	if ! touch $CMDLINE 2>/dev/null; then
+		mount -o remount,rw $BOOT 2>/dev/null
+		[ $? -eq 0 ] || { echo "ERROR: failed to mount $BOOT RW" >&2; exit 1; }
+		boot_remount=y
+	fi
+
+	return 0
+}
+
+# Take action
+if [ "$action" = "status" ]; then
+	str=$(mount | grep ' on / ')
+
+	if echo $str | grep -q 'overlay'; then
+		echo -n "/ is currently mounted RO" >&2
+	elif echo $str | grep -q 'rw'; then
+		echo -n "/ is currently mounted RW" >&2
+	else
+		echo "ERROR: unable to determine mount options for /" >&2
+		exit 1
+	fi
+
+	echo " and will be mounted $state on next boot" >&2
+	exit 0
+elif [ "$action" = "$state" ]; then
+	echo "/ is already set to be mounted $state on next boot" >&2
+	exit 1
+elif [ "$state" = "RO" ]; then
+	check_permission && cp $CMDLINE_RW $CMDLINE
+	newstate=RW
+elif [ "$state" = "RW" ]; then
+	check_permission && cp $CMDLINE_RO $CMDLINE
+	newstate=RO
+fi
+
+echo "/ will be mounted $newstate on next boot" >&2
+
+# Remount BOOT read-only if that was the way we found it
+if [ "$boot_remount" = "y" ]; then
+	mount -o remount,ro $BOOT 2>/dev/null
+	[ $? -eq 0 ] || { echo "failed to mount $BOOT RO" >&2; exit 1; }
+fi
+
+# The End
+exit 0
