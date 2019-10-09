@@ -1,5 +1,6 @@
 #!/bin/bash
 
+apt update
 apt install initramfs-tools
 
 if ! grep overlay /etc/initramfs-tools/modules > /dev/null; then
