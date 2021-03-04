@@ -49,4 +49,7 @@ local_mount_root()
 	mount -t overlay \
 	    -olowerdir=/lower,upperdir=/upper/data,workdir=/upper/work \
 	    overlay ${rootmnt}
+
+        # R/W access to the /boot directory will disappear when we pivot
+        mount -o bind /lower/boot ${rootmnt}/boot
 }
