@@ -22,6 +22,7 @@ print_usage() {
 [ "$1" = "--help" -o "$1" = "-h" ] && { print_usage; exit 0; }
 
 # Change to the working directory
+mount $BOOT >/dev/null 2>&1 || : # Some systems don't mount /boot, if they see out bind mount
 cd $BOOT
 
 # Check that the files we need are present and readable
