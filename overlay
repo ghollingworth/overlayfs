@@ -51,5 +51,6 @@ local_mount_root()
 	    overlay ${rootmnt}
 
         # R/W access to the /boot directory will disappear when we pivot
-        mount -o bind /lower/boot ${rootmnt}/boot
+        [ -n "`ls -A /lower/boot`" ] &&
+	mount -o bind /lower/boot ${rootmnt}/boot
 }
