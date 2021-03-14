@@ -1,5 +1,10 @@
 #!/bin/bash
 
+if grep -qE '^overlay$' /etc/initramfs-tools/modules; then
+	printf 'Seems like overlayfs was already initialized, abort.\n'
+	exit 1
+fi
+
 apt install initramfs-tools
 
 if ! grep overlay /etc/initramfs-tools/modules > /dev/null; then
