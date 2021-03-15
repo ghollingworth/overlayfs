@@ -7,6 +7,7 @@ if ! grep overlay /etc/initramfs-tools/modules > /dev/null; then
 fi
 
 cp overlay /etc/initramfs-tools/scripts
+mount -o remount,rw /boot
 
 # This is needed for the u-boot
 if [ -r /boot/armbianEnv.txt ]; then
@@ -29,11 +30,11 @@ if [ -r /boot/config.txt ]; then
   sed -e "s/initramfs.*//" -i /boot/config.txt
   echo initramfs initrd7.img >> /boot/config.txt
 
-  sed -e 's/boot=overlay //' /boot/cmdline.txt > /boot/cmdline.txt.orig
-  sed -e "s/\(.*\)/boot=overlay \1/" -i /boot/cmdline.txt
-  cp /boot/cmdline.txt /boot/cmdline.txt.overlay
+  sed -e 's/.*/ & /;:1;s/ boot=overlay / /g;t1;s/ \+/ /g;s/^ //;s/ $//' /boot/cmdline.txt > /boot/cmdline.txt.orig &&
+  sed -e "s/.*/boot=overlay &/" /boot/cmdline.txt.orig >/boot/cmdline.txt.overlay &&
+  cp /boot/cmdline.txt.overlay /boot/cmdline.txt
 fi
 
 cp overctl /usr/local/sbin
 
-sed -e "s/\(.*\/boot.*\)defaults\(.*\)/\1defaults,ro\2/" -i /etc/fstab
+sed -e "/.*\/boot.*ro/b;s/\(.*\/boot.*\)defaults\(.*\)/\1defaults,ro\2/" -i /etc/fstab
