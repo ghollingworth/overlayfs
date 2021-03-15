@@ -1,6 +1,6 @@
 #!/bin/bash
 
-apt install initramfs-tools
+apt install initramfs-tools busybox-static
 
 if ! grep overlay /etc/initramfs-tools/modules > /dev/null; then
   echo overlay >> /etc/initramfs-tools/modules
