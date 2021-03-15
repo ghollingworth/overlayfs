@@ -49,8 +49,13 @@ local_mount_root()
 	mount -t overlay \
 	    -olowerdir=/lower,upperdir=/upper/data,workdir=/upper/work \
 	    overlay ${rootmnt}
+	# R/W access to the /boot directory will disappear when we pivot
+	[ -z "`ls -A /lower/boot 2>/dev/null`" ] || mount -o bind /lower/boot ${rootmnt}/boot
 
-        # R/W access to the /boot directory will disappear when we pivot
-        [ -n "`ls -A /lower/boot`" ] &&
-	mount -o bind /lower/boot ${rootmnt}/boot
+	# Some users don't actually want a fully R/O system, but instead
+	# merely want to reduce the amount of writes to minimize risk of
+	# file system corruption.
+	# Uncomment and edit as needed.
+	mount -o bind /lower/home ${rootmnt}/home >&/dev/null || :
+	mount -o remount,rw ${rootmnt}/home >&/dev/null || :
 }
