@@ -1,9 +1,13 @@
 #!/bin/sh
 
-BOOT=/boot
-CMDLINE=cmdline.txt
-CMDLINE_RO=cmdline.txt.overlay
-CMDLINE_RW=cmdline.txt.orig
+BOOT="$(awk '$2 ~ /^\/boot/ { print $2; exit }' /proc/mounts)"
+[ -n "${BOOT}" -a -r "${BOOT}/config.txt" ] || BOOT="/boot"
+BOOT="$(readlink -f "${BOOT}/config.txt" 2>/dev/null)"
+BOOT="$(dirname "${BOOT:-/boot/config.txt}")"
+
+CMDLINE="cmdline.txt"
+CMDLINE_RO="cmdline.txt.overlay"
+CMDLINE_RW="cmdline.txt.orig"
 
 UBOOTENV=armbianEnv.txt
 
@@ -22,8 +26,9 @@ print_usage() {
 [ "$1" = "--help" -o "$1" = "-h" ] && { print_usage; exit 0; }
 
 # Change to the working directory
-mount $BOOT >/dev/null 2>&1 || : # Some systems don't mount /boot, if they see out bind mount
-cd $BOOT
+mount /boot     >/dev/null 2>&1 || : # Some systems don't mount /boot, if they see our bind mount
+mount "${BOOT}" >/dev/null 2>&1 || : # Some systems don't mount /boot, if they see our bind mount
+cd "${BOOT}"
 
 # Check that the files we need are present and readable
 if [ -r $CMDLINE ]; then
@@ -79,9 +84,9 @@ check_permission() {
 	local cmdline=$CMDLINE
 	[ -r $CMDLINE ] || cmdline=$UBOOTENV
 	if ! touch $cmdline 2>/dev/null; then
-		mount -o remount,rw $BOOT 2>/dev/null
-		[ $? -eq 0 ] || { echo "ERROR: failed to mount $BOOT RW" >&2; exit 1; }
-		boot_remount=y
+		mount -o remount,rw "${BOOT}" 2>/dev/null && boot_remount="${BOOT}" ||
+		mount -o remount,rw /boot     2>/dev/null && boot_remount="/boot" ||
+		{ echo "ERROR: failed to mount $BOOT RW" >&2; exit 1; }
 	fi
 
 	return 0
@@ -133,9 +138,9 @@ fi
 echo "/ will be mounted $newstate on next boot" >&2
 
 # Remount BOOT read-only if that was the way we found it
-if [ "$boot_remount" = "y" ]; then
-	mount -o remount,ro $BOOT 2>/dev/null
-	[ $? -eq 0 ] || { echo "failed to mount $BOOT RO" >&2; exit 1; }
+if [ -n "$boot_remount" ]; then
+	mount -o remount,ro "$boot_remount" 2>/dev/null ||
+	{ echo "failed to mount ${boot_remount} RO" >&2; exit 1; }
 fi
 
 # The End
