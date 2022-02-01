@@ -84,8 +84,8 @@ check_permission() {
 	local cmdline=$CMDLINE
 	[ -r $CMDLINE ] || cmdline=$UBOOTENV
 	if ! touch $cmdline 2>/dev/null; then
-		mount -o remount,rw "${BOOT}" 2>/dev/null && boot_remount="${BOOT}" ||
-		mount -o remount,rw /boot     2>/dev/null && boot_remount="/boot" ||
+		mount -o remount,rw "${BOOT}" 2>/dev/null && boot_remount="${BOOT}" || {
+		mount -o remount,rw /boot     2>/dev/null && boot_remount="/boot"; } ||
 		{ echo "ERROR: failed to mount $BOOT RW" >&2; exit 1; }
 	fi
 

@@ -14,7 +14,7 @@ cp overlay /etc/initramfs-tools/scripts
 # Different distributions place the boot files into slightly different
 # locations. So, make an effort to automatically locate them.
 boot="$(awk '$2 ~ /^\/boot/ { print $2; exit }' /proc/mounts)"
-[ -n "${boot}" -a -r "${cfg}/config.txt" ] || cfg="/boot"
+[ -n "${boot}" -a -r "${boot}/config.txt" ] && cfg="${boot}" || cfg="/boot"
 cfg="$(readlink -f "${cfg}/config.txt" 2>/dev/null)"
 cfg="$(dirname "${cfg:-/boot/config.txt}")"
 
