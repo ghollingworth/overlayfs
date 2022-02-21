@@ -1,9 +1,15 @@
 #!/bin/sh
 
-BOOT=/boot
-CMDLINE=cmdline.txt
-CMDLINE_RO=cmdline.txt.overlay
-CMDLINE_RW=cmdline.txt.orig
+BOOT="$(awk '$2 ~ /^\/boot/ { print $2; exit }' /proc/mounts)"
+[ -n "${BOOT}" -a -r "${BOOT}/config.txt" ] || BOOT="/boot"
+BOOT="$(readlink -f "${BOOT}/config.txt" 2>/dev/null)"
+BOOT="$(dirname "${BOOT:-/boot/config.txt}")"
+
+CMDLINE="cmdline.txt"
+CMDLINE_RO="cmdline.txt.overlay"
+CMDLINE_RW="cmdline.txt.orig"
+
+UBOOTENV=armbianEnv.txt
 
 print_usage() {
 	cat <<-TEXT
@@ -20,12 +26,18 @@ print_usage() {
 [ "$1" = "--help" -o "$1" = "-h" ] && { print_usage; exit 0; }
 
 # Change to the working directory
-cd $BOOT
+mount /boot     >/dev/null 2>&1 || : # Some systems don't mount /boot, if they see our bind mount
+mount "${BOOT}" >/dev/null 2>&1 || : # Some systems don't mount /boot, if they see our bind mount
+cd "${BOOT}"
 
 # Check that the files we need are present and readable
-for file in $CMDLINE $CMDLINE_RO $CMDLINE_RW; do
-	[ -r $file ] || { echo "ERROR: missing file $file" >&2 && exit 1; }
-done
+if [ -r $CMDLINE ]; then
+	for file in $CMDLINE $CMDLINE_RO $CMDLINE_RW; do
+		[ -r $file ] || { echo "ERROR: missing file $file" >&2 && exit 1; }
+	done
+elif ! [ -r $UBOOTENV ]; then
+	echo "ERROR: missing file $UBOOTENV" >&2 && exit 1
+fi
 
 # Process arg (if any)
 case "$1" in
@@ -42,18 +54,26 @@ case "$1" in
 			;;
 esac
 
-line_active=$(cat $CMDLINE)
-line_ro=$(cat $CMDLINE_RO)
-line_rw=$(cat $CMDLINE_RW)
+if [ -r "$CMDLINE" ]; then
+	line_active=$(cat $CMDLINE)
+	line_ro=$(cat $CMDLINE_RO)
+	line_rw=$(cat $CMDLINE_RW)
 
-# Check which CMDLINE is in use, this doubles as a sanity check
-if [ "$line_active" = "$line_ro" ]; then
-	state=RO
-elif [ "$line_active" = "$line_rw" ]; then
-	state=RW
+	# Check which CMDLINE is in use, this doubles as a sanity check
+	if [ "$line_active" = "$line_ro" ]; then
+		state=RO
+	elif [ "$line_active" = "$line_rw" ]; then
+		state=RW
+	else
+		echo "ERROR: $CMDLINE matches neither $CMDLINE_RO, nor $CMDLINE_RW" >&2
+		exit 1
+	fi
 else
-	echo "ERROR: $CMDLINE matches neither $CMDLINE_RO, nor $CMDLINE_RW" >&2
-	exit 1
+	if grep boot=overlay $UBOOTENV >/dev/null; then
+		state=RO
+	else
+		state=RW
+	fi
 fi
 
 check_permission() {
@@ -61,10 +81,12 @@ check_permission() {
 	[ $(id -u) -eq 0 ] || { echo "ERROR: requires root privileges" >&2; exit 1; }
 
 	# Check that we can write to CMDLINE, otherwise try to remount BOOT
-	if ! touch $CMDLINE 2>/dev/null; then
-		mount -o remount,rw $BOOT 2>/dev/null
-		[ $? -eq 0 ] || { echo "ERROR: failed to mount $BOOT RW" >&2; exit 1; }
-		boot_remount=y
+	local cmdline=$CMDLINE
+	[ -r $CMDLINE ] || cmdline=$UBOOTENV
+	if ! touch $cmdline 2>/dev/null; then
+		mount -o remount,rw "${BOOT}" 2>/dev/null && boot_remount="${BOOT}" || {
+		mount -o remount,rw /boot     2>/dev/null && boot_remount="/boot"; } ||
+		{ echo "ERROR: failed to mount $BOOT RW" >&2; exit 1; }
 	fi
 
 	return 0
@@ -89,19 +111,36 @@ elif [ "$action" = "$state" ]; then
 	echo "/ is already set to be mounted $state on next boot" >&2
 	exit 1
 elif [ "$state" = "RO" ]; then
-	check_permission && cp $CMDLINE_RW $CMDLINE
+	check_permission && {
+		if [ -r "$CMDLINE" ]; then
+			cp $CMDLINE_RW $CMDLINE
+		else
+			sed -i '/^extraargs=/{s/boot=overlay//;s/  */ /g;s/ *$//};/^extraargs=$/d' $UBOOTENV
+		fi
+	}
 	newstate=RW
 elif [ "$state" = "RW" ]; then
-	check_permission && cp $CMDLINE_RO $CMDLINE
+	check_permission && {
+		if [ -r "$CMDLINE" ]; then
+			cp $CMDLINE_RO $CMDLINE
+		else
+			sed -i '/^extraargs=/{
+			          s/boot=overlay//g;s/  */ /g;s/=/&boot=overlay /;s/ *$//
+			          :1;N;b1
+			        }
+			        $a\
+extraargs=boot=overlay' $UBOOTENV
+		fi
+	}
 	newstate=RO
 fi
 
 echo "/ will be mounted $newstate on next boot" >&2
 
 # Remount BOOT read-only if that was the way we found it
-if [ "$boot_remount" = "y" ]; then
-	mount -o remount,ro $BOOT 2>/dev/null
-	[ $? -eq 0 ] || { echo "failed to mount $BOOT RO" >&2; exit 1; }
+if [ -n "$boot_remount" ]; then
+	mount -o remount,ro "$boot_remount" 2>/dev/null ||
+	{ echo "failed to mount ${boot_remount} RO" >&2; exit 1; }
 fi
 
 # The End
